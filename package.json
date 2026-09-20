@@ -1,0 +1,13 @@
+{
+  "name": "resident-ai",
+  "version": "0.1.0",
+  "description": "A local-first, model-agnostic resident AI architecture for private, persistent, tool-using AI agents.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
