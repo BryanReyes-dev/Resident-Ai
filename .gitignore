@@ -1,0 +1,14 @@
+# Personal runtime data
+context/
+memory/
+logs/
+
+# Personal configuration
+permissions/*.conf
+.env
+.env.*
+
+# Dependencies and generated files
+node_modules/
+dist/
+build/
