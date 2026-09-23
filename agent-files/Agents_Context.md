@@ -2,7 +2,7 @@
 
 > Shared short-term working context for Bryan, ChatGPT, Codex, and other agents working on Resident AI.
 >
-> This file is non-secret and may be committed to the public repository. It is living working memory, not the authoritative architecture document. Finalized architecture belongs in `agent-files/ARCHITECTURE.md`.
+> This file is non-secret and may be committed to the public repository. It is living working memory, not the authoritative architecture document. Finalized architecture belongs in agent-files/ARCHITECTURE.md.
 
 ## Current Direction
 
@@ -10,167 +10,289 @@ Resident AI is being built as a **Linux-server-first resident AI runtime and orc
 
 Resident AI should run persistently on an enterprise Linux server and provide a controlled AI service to applications and users on that environment.
 
+The long-term distribution goal is a self-contained Resident AI application executable. Users should not need to manually install Node.js, npm, or the Resident AI JavaScript dependency tree. External infrastructure such as inference runtimes and model weights can be provisioned separately by Resident AI.
+
 The repository should be cloneable by another organization or user who can select model runtimes/providers and supply their own private runtime data.
 
 ## Current Foundation
 
-- TypeScript is the core implementation language.
-- Node.js provides the current application runtime.
-- Ollama is the first model provider.
-- Qwen 3.5 9B is the current local development model.
-- The provider boundary is represented by `ModelProvider`.
-- `OllamaProvider` currently implements that interface.
-- The command-line entry point currently accepts one prompt and prints one response.
+- TypeScript is the current implementation language.
+- Node.js is the current development/runtime environment.
+- Ollama is the first repository model provider.
+- Qwen 3.5 9B is the current Ollama development model.
+- The current main-branch provider boundary is represented by ModelProvider.
+- OllamaProvider currently implements that interface.
+- The current main-branch executable is still a one-shot CLI that accepts one prompt and prints one response.
 - Personal context, memory, logs, secrets, and machine-specific configuration are intentionally excluded from the public repository.
-- A `web/` starter application exists from earlier experimentation, but it is not part of the intended Resident AI service architecture and should not become the core product boundary.
+- A web/ starter application exists from earlier experimentation and is not the intended Resident AI service boundary.
 
-## Architecture Decisions Now Reflected
+## Validated Linux Runtime Experiment
 
-### Server role
+The current Linux development server has already validated the following path outside the main-branch Resident AI implementation:
 
-Resident AI is Linux-server-first.
+    AI SDK Core
+        ↓
+    OpenAI-compatible provider
+        ↓
+    custom fetch
+        ↓
+    Node / Undici
+        ↓
+    Unix-domain socket
+        ↓
+    llama-server
+        ↓
+    Qwen3-4B Q4_K_M
 
-The target runtime is a persistent Linux service, with the operating system responsible for service supervision during the initial deployment model.
+Validated environment facts:
 
-The intended process relationship is:
+- Ubuntu 26.04.1 LTS
+- x86_64
+- AMD Ryzen 7 5825U, 8 cores / 16 threads
+- 12 GiB RAM
+- No discrete GPU was detected during the initial host check
+- Node.js 24.21.0
+- npm 11.19.0
+- llama.cpp prebuilt runtime b10964
+- llama-server version 0.4.1-dev, build 10964
+- Qwen/Qwen3-4B-GGUF:Q4_K_M loads and generates successfully
+- llama-server successfully binds to a Unix-domain socket
+- Node successfully reached the llama-server socket
+- AI SDK successfully generated a response through the Unix-socket transport
 
-```text
-systemd
- ├── resident-ai.service
- └── inference-runtime.service
-```
-
-Resident AI and inference runtimes may eventually have Resident AI-managed lifecycle coordination, but they remain explicit process boundaries.
-
-### External communication
-
-External applications/services should communicate with Resident AI rather than directly with a model runtime.
-
-HTTP(S) is the initial external API transport.
-
-gRPC remains a future option where strongly typed service-to-service communication or other requirements justify it.
-
-### Internal communication
-
-When Resident AI and an inference runtime are colocated on the same Linux host, Unix-domain sockets are the default internal transport.
-
-The transport is not the architectural abstraction itself. Provider/runtime contracts must remain independent of whether communication uses Unix sockets, TCP, or another transport.
-
-Containerized deployments may use Unix sockets when a secure shared socket boundary can be deliberately provided. A network transport is appropriate when services cross hosts or cannot practically share local IPC.
+The experiment established that AI SDK can remain the model-interaction engine while Resident AI controls the server/runtime boundary.
 
 ## AI SDK Direction
 
-Vercel AI SDK is being evaluated as the standardized AI interaction layer, not as the authoritative Resident AI runtime-management abstraction.
+Vercel AI SDK Core is a deliberate dependency for the Resident AI model-interaction engine.
 
-Current intended layering:
+Resident AI should rely on AI SDK functionality instead of reimplementing model-interaction infrastructure already provided by the SDK.
 
-```text
-Resident AI orchestration
+Use an existing AI SDK provider whenever it covers the requested model/provider.
+
+Use the OpenAI-compatible provider when the runtime exposes a compatible API.
+
+Use a custom AI SDK provider only when an existing provider or compatible adapter is insufficient.
+
+Resident AI retains ownership of infrastructure concepts outside model interaction, including model registry, runtime lifecycle, host discovery, process supervision, resource policy, permissions, authentication/authorization, deployment, and provisioning.
+
+## Server and Transport Direction
+
+Resident AI is Linux-server-first.
+
+External application communication should use a network-capable service protocol. HTTP(S) is the first external API transport; gRPC remains a possible later protocol.
+
+When Resident AI and an inference runtime are colocated on the same Linux host, Unix-domain sockets are the default internal transport.
+
+The transport must remain replaceable beneath the provider/runtime abstraction so that remote or containerized runtimes can use another transport when necessary.
+
+Inference runtimes should remain explicit processes/services rather than being embedded into the Resident AI application by default.
+
+## Self-Contained Distribution Direction
+
+The intended user-facing installation boundary is:
+
+    Linux server
         ↓
-AI SDK integration
+    Resident AI installer/executable
         ↓
-Resident AI provider/runtime adapter
+    host inspection
         ↓
-Runtime transport
+    supported runtime provisioning
         ↓
-Model runtime
-```
+    model registration/provisioning
+        ↓
+    service installation
+        ↓
+    persistent Resident AI
 
-AI SDK can provide standardized model interaction, streaming, structured generation, tool interaction, and provider integrations where appropriate.
+The exact executable packaging implementation is still open. Node.js Single Executable Applications are one candidate implementation, but the architecture does not require Node SEA specifically.
 
-Resident AI must retain ownership of broader runtime-management concepts such as model discovery, runtime lifecycle, process health, resource policy, permissions, and host orchestration.
+The self-contained boundary means Resident AI should own its application runtime and JavaScript dependencies. It does not mean model weights, GPU drivers, the Linux kernel, or every native inference runtime must be embedded inside the Resident AI executable.
 
-AI SDK custom-provider support is a potential path for capabilities/providers that are not covered by an existing AI SDK integration.
+## Immediate Implementation State
 
-## Immediate Implementation Goal
-
-The next implementation milestone is to establish a real persistent Linux-server inference path using **llama.cpp + AI SDK**.
+The next source implementation should turn the validated experiment into repository code.
 
 Target flow:
 
-```text
-Resident AI
-   ↓
-AI SDK
-   ↓
-Resident AI llama.cpp adapter/provider
-   ↓
-Unix-domain socket
-   ↓
-llama-server
-   ↓
-GGUF model
-```
+    Resident AI service
+        ↓
+    AI SDK Core
+        ↓
+    OpenAI-compatible llama.cpp integration
+        ↓
+    Unix-domain socket
+        ↓
+    llama-server
+        ↓
+    GGUF model
 
-The existing Ollama provider should remain intact during this work so the project has more than one concrete runtime path and does not prematurely replace the existing provider abstraction.
+The existing Ollama provider should remain until the new path is implemented and validated.
 
-### Initial implementation order
+The current ModelProvider interface is likely too narrow for the long-term AI SDK-based architecture because it only exposes a single prompt-to-string generation operation. Do not expand or replace it blindly; first define the boundary based on the actual Resident AI model registry and AI SDK usage.
 
-1. Install the `ai` package in the Resident AI TypeScript project.
-2. Establish a small AI SDK integration without making AI SDK the core Resident AI abstraction.
-3. Install/build `llama.cpp` on the Linux server.
-4. Run `llama-server` with a suitable GGUF model.
-5. Verify the llama.cpp OpenAI-compatible API independently.
-6. Implement the Resident AI adapter needed to connect AI SDK to the local llama.cpp service.
-7. Validate the end-to-end prompt path.
-8. Replace machine-specific connection details with environment/configuration.
-9. Run Resident AI as a persistent systemd-managed service.
-10. Add health/readiness behavior after the basic persistent path works.
+## 10-Day Minimum Milestone
 
-## Current Architecture Questions
+The minimum target for the next ten days is a **Resident AI 0.2.0 Linux Server Preview** that provides a stable development baseline.
 
-These remain open until implementation/validation:
+Required acceptance criteria:
+
+1. Resident AI has a persistent Node application process rather than a one-shot prompt process.
+2. The service exposes a basic local health endpoint.
+3. The service exposes a basic chat endpoint backed by AI SDK Core.
+4. AI SDK reaches llama.cpp through the Unix-domain socket.
+5. llama.cpp runs as its own systemd-managed service.
+6. Resident AI runs as its own systemd-managed service.
+7. Model/runtime/socket configuration is externalized rather than hardcoded to one machine path.
+8. The repository contains a repeatable deployment command that:
+   - synchronizes the Ubuntu deployment checkout to the selected Git commit on main,
+   - installs locked dependencies,
+   - builds the application,
+   - validates the build,
+   - restarts the service,
+   - checks service health.
+9. A versioned 0.2.0 release/tag can be created after the deployment loop is proven.
+10. The server can be updated by pushing code to GitHub, pulling the selected version, and restarting the persistent service without manually recreating the runtime setup.
+
+The milestone intentionally does **not** require:
+
+- Host hardware scanning.
+- Automatic runtime selection.
+- Automatic model provisioning.
+- Persistent memory.
+- Tool execution.
+- Agent orchestration.
+- Multi-model routing.
+- Enterprise authentication/authorization.
+- Public internet exposure.
+- Full rollback infrastructure.
+- A production enterprise security certification.
+- A self-contained executable release.
+
+A self-contained Linux executable is a useful stretch goal for the ten-day period, but it should not prevent the 0.2.0 server-preview milestone if packaging becomes the schedule risk.
+
+## Recommended Implementation Order
+
+    Persistent Resident AI HTTP service
+             ↓
+    AI SDK Core integration in repository
+             ↓
+    llama.cpp provider/adapter
+             ↓
+    Externalized configuration
+             ↓
+    systemd service for llama.cpp
+             ↓
+    systemd service for Resident AI
+             ↓
+    deployment script
+             ↓
+    health/readiness checks
+             ↓
+    0.2.0 release baseline
+             ↓
+    self-contained executable
+             ↓
+    host capability discovery
+             ↓
+    runtime/model provisioning
+
+## Deployment Workflow Goal
+
+Development workflow:
+
+    Developer workstation
+          ↓
+      git push main
+          ↓
+        GitHub
+          ↓
+      Ubuntu server
+          ↓
+    deployment command
+          ↓
+    fetch selected main commit
+          ↓
+    npm ci / build
+          ↓
+    service restart
+          ↓
+    readiness check
+
+Release workflow can later use packaged artifacts so the target machine does not need Node.js or npm.
+
+The deployment process should treat the server checkout as a deployment artifact, not as a development workspace. A dirty checkout should be rejected rather than silently merged with incoming deployment code.
+
+## Host Capability Discovery
+
+Host discovery is intentionally postponed until the persistent service and deployment baseline are stable.
+
+The eventual subsystem should deterministically inspect:
+
+- Linux distribution/version.
+- CPU and instruction capabilities.
+- RAM and storage.
+- GPU and VRAM where available.
+- Supported acceleration backends.
+- Installed runtimes.
+- Installed models.
+- Service manager availability.
+- Relevant system capabilities.
+
+The scanner should produce a structured capability profile that a provisioning planner can use. It should not ask an unconstrained model to execute arbitrary discovery shell commands.
+
+## Open Questions
 
 - Exact Resident AI external API shape.
-- Whether the external API should support HTTP only initially or also gRPC at the first production milestone.
-- Exact internal runtime/provider interface beyond the current `generate(prompt)` contract.
-- Best mechanism for connecting AI SDK's HTTP-oriented provider layer to a Unix-domain socket.
-- Whether Resident AI should directly implement an AI SDK custom provider or use an OpenAI-compatible adapter.
+- Whether the first external API remains HTTP-only or also exposes gRPC.
+- Long-term Resident AI model/runtime interface.
+- Whether the AI SDK provider object itself should be the main model-registry object or wrapped by a Resident AI model record.
+- Exact Unix-socket transport abstraction.
+- Whether Resident AI should use an OpenAI-compatible provider, a custom AI SDK provider, or both for llama.cpp.
 - Runtime lifecycle ownership between Resident AI and systemd.
-- Model discovery and runtime/model registry.
+- Model registry format.
 - Model loading/unloading policy.
 - CPU/GPU/RAM resource scheduling.
 - Multi-model routing.
 - Health/readiness semantics.
-- Exact conversation/session model.
-- Exact context file format and loading order.
-- Persistent memory storage and retrieval design.
-- Host environment observation layer.
+- Authentication and authorization.
+- Conversation/session model.
+- Context format/loading order.
+- Persistent memory architecture.
 - Tool registration and invocation contract.
-- Permission schema and enforcement mechanism.
-- Read-only environment observation.
-- User approval flow for tool execution.
-- Remote client authentication/authorization.
-- Specialized AI capability coordination for image, video, and audio.
-- Portability of private runtime data between Linux machines.
+- Permission schema/enforcement.
+- Specialized AI capabilities such as image, video, audio, reranking, embeddings, and transcription.
+- Portable runtime-state layout.
+- Self-contained executable packaging mechanism.
+- Release signing and update verification.
+- Rollback strategy.
 
 ## Security / Operations Notes
 
 - Resident AI should not expose the inference runtime directly as the enterprise application API.
-- Runtime sockets should be treated as privileged internal interfaces and protected by filesystem ownership/permissions.
-- Network-facing services should use explicit authentication and authorization before enterprise deployment.
+- Runtime sockets should be protected by filesystem ownership/permissions.
+- Network-facing services require explicit authentication and authorization before enterprise deployment.
 - Downloaded model weights and runtime state remain outside Git.
 - Unrestricted shell/root execution is not part of the current foundation.
 
 ## Repository Convention
 
-Resident AI uses the shared `agent-files/` convention:
+Resident AI uses the shared agent-files/ convention:
 
-```text
-agent-files/
-├── AGENTS.md
-├── ARCHITECTURE.md
-├── Agents_Context.md
-└── CLAUDE.md
-```
+    agent-files/
+    ├── AGENTS.md
+    ├── ARCHITECTURE.md
+    ├── Agents_Context.md
+    └── CLAUDE.md
 
-`AGENTS.md` contains agent behavior and repository rules.
+AGENTS.md contains agent behavior and repository rules.
 
-`ARCHITECTURE.md` contains finalized architecture.
+ARCHITECTURE.md contains finalized architecture.
 
-`Agents_Context.md` contains current discoveries, implementation state, proposals, open questions, and handoffs.
+Agents_Context.md contains current discoveries, implementation state, proposals, open questions, and handoffs.
 
-`CLAUDE.md` provides the Claude entry point into the shared agent instructions/context.
+CLAUDE.md provides the Claude entry point into the shared agent instructions/context.
 
 ## Working Rule
 
