@@ -4,42 +4,120 @@
 
 ## 1. System Identity
 
-Resident AI is a local-first, model-agnostic architecture for building a persistent AI resident on a user's own machine or server.
+Resident AI is a **Linux-server-first, model-agnostic AI runtime and orchestration platform** for enterprise and server environments.
 
-Resident AI is not a model. It is the orchestration layer around models, providers, context, memory, tools, permissions, and user interaction.
+Resident AI is not a model or inference runtime. It is the persistent service that coordinates model runtimes, providers, context, memory, tools, permissions, policies, and client applications.
 
-The project is intended to be reusable: another user should be able to clone the repository, choose a supported model provider, configure their own runtime data, and use the same core architecture without inheriting Bryan's private environment.
+The project is intended to be reusable: another organization or user should be able to deploy Resident AI to a Linux server, configure their own runtime data and providers, and use the same core architecture without inheriting Bryan's private environment.
 
-## 2. Core Runtime Boundary
+Resident AI is intentionally server-oriented. Cross-platform desktop packaging is not a requirement of the Resident AI architecture.
 
-The foundational execution relationship is:
+## 2. System Boundary
+
+Resident AI is the primary application/service boundary for AI capabilities on the host.
+
+The foundational relationship is:
 
 ```text
-User / Client
-     │
-     ▼
-Resident AI
-     │
-     ├── Context
-     ├── Memory
-     ├── Tools
-     ├── Permissions
-     └── Model Provider
-              │
-              ▼
-        Model Runtime
-              │
-              ▼
-            Model
+Enterprise / Client Application
+             │
+             │ External service protocol
+             ▼
+      ┌──────────────────┐
+      │    Resident AI   │
+      │                  │
+      │ API / Auth       │
+      │ Policy           │
+      │ Orchestration    │
+      │ Model Management │
+      └────────┬─────────┘
+               │
+               │ Internal IPC
+               ▼
+      ┌──────────────────┐
+      │  Model Runtime   │
+      │ llama.cpp / ...  │
+      └────────┬─────────┘
+               ▼
+             Model
 ```
 
-Resident AI owns orchestration and policy. The model runtime owns model execution.
+Enterprise applications should communicate with Resident AI rather than directly depending on a particular local inference runtime.
 
-## 3. Model Provider Abstraction
+Resident AI therefore owns the higher-level application-facing contract, security policy, routing, and orchestration. Inference runtimes own model execution.
 
-Resident AI communicates with models through a provider interface.
+## 3. Process and Transport Boundaries
 
-The current interface is intentionally small:
+Resident AI is designed around explicit process boundaries.
+
+### External communication
+
+Communication between Resident AI and external applications/services uses a network-capable service protocol.
+
+HTTP(S) is the initial default for the external Resident AI API. gRPC remains a valid future option when strongly typed service-to-service communication or streaming requirements justify it.
+
+### Internal communication
+
+When Resident AI and an inference/runtime service are colocated on the same Linux host, **Unix-domain sockets are the default internal transport**.
+
+This is a transport decision, not the model/provider abstraction itself.
+
+```text
+External service
+      │
+   HTTP(S)
+      ▼
+Resident AI
+      │
+ Unix socket
+      ▼
+Inference runtime
+```
+
+The internal contract must remain independent of the transport so that a runtime can later be moved to another host, container boundary, or deployment topology without redesigning Resident AI's orchestration layer.
+
+### Deployment topology exception
+
+Containerized services may use Unix-domain sockets when the socket can be safely and deliberately shared between the participating services.
+
+When a runtime resides on another host or cannot practically share the local IPC boundary, a network transport is used instead.
+
+## 4. Runtime Separation
+
+Inference runtimes are independent services/processes rather than part of Resident AI's application logic.
+
+The intended relationship is:
+
+```text
+Resident AI Core
+      │
+      ▼
+Runtime / Provider abstraction
+      │
+      ├── Unix socket transport
+      │
+      ▼
+Runtime service
+      │
+      ├── llama.cpp
+      ├── Ollama
+      ├── vLLM
+      └── other supported runtimes
+```
+
+The runtime owns model loading and inference execution.
+
+Resident AI may eventually manage runtime lifecycle, health, resource policy, and model selection, but this does not require Resident AI to embed or tightly couple itself to a particular runtime implementation.
+
+For initial server deployment, operating-system service management such as systemd may supervise the Resident AI and inference-runtime processes independently.
+
+## 5. Model Provider Abstraction
+
+Resident AI communicates with models through a provider/runtime abstraction.
+
+The abstraction must remain independent of a specific model runtime, protocol, or vendor SDK.
+
+The current provider path is:
 
 ```text
 Resident AI Core
@@ -55,9 +133,39 @@ Qwen 3.5 9B
 
 Ollama is the first implementation, not a permanent architectural dependency.
 
-The provider boundary should allow future local or hosted providers without requiring core orchestration code to understand provider-specific protocols.
+Future local or hosted providers/runtimes should be addable without requiring core orchestration code to understand provider-specific protocols.
 
-## 4. Current Implementation
+## 6. AI SDK Integration
+
+The Vercel AI SDK is an **AI interaction/integration layer**, not the authoritative Resident AI runtime abstraction.
+
+Resident AI may use AI SDK Core to standardize language-model interaction, streaming, tool interaction, structured generation, and provider integrations.
+
+The architectural relationship is:
+
+```text
+Resident AI orchestration
+        │
+        ▼
+AI SDK integration
+        │
+        ▼
+Resident AI provider/runtime adapter
+        │
+        ▼
+Runtime transport
+        │
+        ▼
+Model runtime
+```
+
+AI SDK must not become the definition of Resident AI's runtime-management layer.
+
+Resident AI's own interfaces remain responsible for concepts that are broader than model interaction, including runtime lifecycle, model discovery, resource policy, process health, permissions, and host-level orchestration.
+
+AI SDK custom-provider support may be used when Resident AI needs an integration that is not available through an existing provider.
+
+## 7. Current Implementation
 
 The current repository is an early TypeScript implementation.
 
@@ -74,7 +182,9 @@ The current executable path accepts a command-line prompt, sends it through the 
 
 This is a foundation, not the complete resident architecture.
 
-## 5. Runtime Data Separation
+The next implementation milestone is to establish the Linux server runtime path using llama.cpp and AI SDK without removing the existing provider abstraction.
+
+## 8. Runtime Data Separation
 
 Public source code and private runtime data are intentionally separated.
 
@@ -99,7 +209,9 @@ Private runtime data
 
 Private runtime data must not become a dependency of the public repository.
 
-## 6. Context and Memory
+Model weights and downloaded runtime artifacts must not be committed to Git.
+
+## 9. Context and Memory
 
 Context and persistent memory are separate concepts.
 
@@ -111,7 +223,7 @@ Both are user-owned runtime data and must remain inspectable, editable, and remo
 
 The exact storage, retrieval, ranking, summarization, and consolidation mechanisms are not yet finalized.
 
-## 7. Tools and Permissions
+## 10. Tools and Permissions
 
 Tools are capabilities that Resident AI may eventually use to interact with the host system and external services.
 
@@ -131,7 +243,7 @@ Broader controlled execution
 
 Unrestricted shell/root execution is not part of the current foundation.
 
-## 8. Provider and Model Separation
+## 11. Provider and Model Separation
 
 A model and its runtime are external resources rather than repository source.
 
@@ -140,24 +252,34 @@ For example:
 ```text
 Resident AI repository
        │
-       └── Ollama provider integration
+       └── provider/runtime integration
 
-Ollama installation
+Linux server
        │
-       └── Qwen 3.5 9B model weights
+       ├── Resident AI service
+       ├── inference runtime
+       └── model weights
 ```
 
-Model weights must not be committed to Git.
+Model weights and machine-specific runtime state must remain outside version control.
 
-## 9. Reusable Architecture
+## 12. Server Lifecycle
 
-The repository is designed to be reusable by other users.
+Resident AI is intended to operate as a persistent Linux service rather than as a one-shot CLI process.
 
-A user's machine-specific implementation should be supplied through configuration and runtime data rather than by forking the architecture around one machine.
+The initial production-oriented process model is:
 
-The public repository should therefore contain examples, schemas, and defaults rather than personal credentials, private context, or hardware-specific assumptions.
+```text
+systemd
+ ├── resident-ai.service
+ └── inference-runtime.service
+```
 
-## 10. Development Principle
+Resident AI should eventually expose health/readiness information and recover cleanly from runtime failures.
+
+Resident AI may later coordinate runtime lifecycle, but operating-system supervision remains a valid and supported deployment mechanism.
+
+## 13. Development Progression
 
 Resident AI should be developed incrementally.
 
@@ -167,6 +289,14 @@ The current progression is:
 Model connection
       ↓
 Provider abstraction
+      ↓
+llama.cpp runtime integration
+      ↓
+AI SDK integration
+      ↓
+Persistent Resident AI service
+      ↓
+External service API
       ↓
 Conversation
       ↓
@@ -183,11 +313,13 @@ Permission-controlled execution
 Agent orchestration
       ↓
 Multi-model / multi-tool coordination
+      ↓
+Runtime/model management
 ```
 
 Each layer should be validated before becoming a major dependency of the next layer.
 
-## 11. Architecture Change Rule
+## 14. Architecture Change Rule
 
 Architectural changes require explicit approval from Bryan before being recorded as finalized decisions here.
 
