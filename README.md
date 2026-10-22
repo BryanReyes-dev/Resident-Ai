@@ -117,31 +117,3 @@ User-approved limited execution
     ↓
 Broader controlled execution
 ```
-
-Unrestricted shell or root access is not part of the current foundation.
-
-## Current Repository Structure
-
-```text
-resident-ai/
-├── src/
-│   ├── core/
-│   │   └── model-provider.ts
-│   ├── providers/
-│   │   └── ollama-provider.ts
-│   └── index.ts
-├── agent-files/
-├── context/          # private runtime data
-├── memory/           # private runtime data
-├── permissions/      # private configuration; examples may be public
-├── logs/             # private runtime data
-├── system/
-├── tools/
-├── config/
-├── scripts/
-├── package.json
-├── tsconfig.json
-└── README.md
-```
-
-Some directories are intentionally placeholders for capabilities that will be implemented later. Their presence does not mean those capabilities are currently implemented.
