@@ -1,14 +1,22 @@
-# Personal runtime data
-context/
-memory/
-logs/
+# Rust build output
+/cli/target/
+target/
 
-# Personal configuration
-permissions/*.conf
-.env
-.env.*
-
-# Dependencies and generated files
+# JavaScript/TypeScript tooling, if introduced for the service later
 node_modules/
 dist/
 build/
+
+# Private runtime data
+context/
+memory/
+logs/
+permissions/*.conf
+
+# Local configuration and secrets
+.env
+.env.*
+
+# Local editor / OS files
+.DS_Store
+Thumbs.db
